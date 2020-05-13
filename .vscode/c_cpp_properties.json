@@ -9,13 +9,15 @@
             "includePath": [
                 "/Users/jonasohland/code/headtracker/gyro_firmware/include",
                 "/Users/jonasohland/code/headtracker/gyro_firmware/src",
+                "/Users/jonasohland/code/headtracker/gyro_firmware/third_party/i2cdevlib/Arduino/MPU6050",
+                "/Users/jonasohland/code/headtracker/gyro_firmware/third_party/i2cdevlib/Arduino/I2Cdev",
+                "/Users/jonasohland/.platformio/packages/framework-arduinoavr/libraries/__cores__/arduino/Wire/src",
                 "/Users/jonasohland/.platformio/packages/framework-arduinoavr/cores/arduino",
                 "/Users/jonasohland/.platformio/packages/framework-arduinoavr/variants/eightanaloginputs",
                 "/Users/jonasohland/.platformio/packages/framework-arduinoavr/libraries/__cores__/arduino/EEPROM/src",
                 "/Users/jonasohland/.platformio/packages/framework-arduinoavr/libraries/__cores__/arduino/HID/src",
                 "/Users/jonasohland/.platformio/packages/framework-arduinoavr/libraries/__cores__/arduino/SPI/src",
                 "/Users/jonasohland/.platformio/packages/framework-arduinoavr/libraries/__cores__/arduino/SoftwareSerial/src",
-                "/Users/jonasohland/.platformio/packages/framework-arduinoavr/libraries/__cores__/arduino/Wire/src",
                 "/Users/jonasohland/.platformio/packages/tool-unity",
                 ""
             ],
@@ -24,13 +26,15 @@
                 "path": [
                     "/Users/jonasohland/code/headtracker/gyro_firmware/include",
                     "/Users/jonasohland/code/headtracker/gyro_firmware/src",
+                    "/Users/jonasohland/code/headtracker/gyro_firmware/third_party/i2cdevlib/Arduino/MPU6050",
+                    "/Users/jonasohland/code/headtracker/gyro_firmware/third_party/i2cdevlib/Arduino/I2Cdev",
+                    "/Users/jonasohland/.platformio/packages/framework-arduinoavr/libraries/__cores__/arduino/Wire/src",
                     "/Users/jonasohland/.platformio/packages/framework-arduinoavr/cores/arduino",
                     "/Users/jonasohland/.platformio/packages/framework-arduinoavr/variants/eightanaloginputs",
                     "/Users/jonasohland/.platformio/packages/framework-arduinoavr/libraries/__cores__/arduino/EEPROM/src",
                     "/Users/jonasohland/.platformio/packages/framework-arduinoavr/libraries/__cores__/arduino/HID/src",
                     "/Users/jonasohland/.platformio/packages/framework-arduinoavr/libraries/__cores__/arduino/SPI/src",
                     "/Users/jonasohland/.platformio/packages/framework-arduinoavr/libraries/__cores__/arduino/SoftwareSerial/src",
-                    "/Users/jonasohland/.platformio/packages/framework-arduinoavr/libraries/__cores__/arduino/Wire/src",
                     "/Users/jonasohland/.platformio/packages/tool-unity",
                     ""
                 ]
