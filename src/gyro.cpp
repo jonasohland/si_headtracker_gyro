@@ -123,7 +123,7 @@ void si_sample(MPU6050* mpu, si_device_state_t* st)
 
 void si_gy_run(MPU6050* mpu, si_device_state_t* st)
 {
-    if (millis() - st->main_clk_tmt > 1000 / 2) {
+    /* if (millis() - st->main_clk_tmt > 1000 / 2) {
 
         si_gyro_check(mpu, st);
 
@@ -133,15 +133,20 @@ void si_gy_run(MPU6050* mpu, si_device_state_t* st)
         if (st->mpu_status == SI_MPU_FOUND) si_gyro_init(mpu, st);
 
         st->main_clk_tmt = millis();
-    }
+    } */
 
-    if (st->mpu_status == SI_MPU_CONNECTED
-        && st->device_flags & SI_FLAG_SEND_DATA) {
+    if (/* st->mpu_status == SI_MPU_CONNECTED
+        && */
+        st->device_flags
+        & SI_FLAG_SEND_DATA) {
 
         if (millis() - st->mpu_sample_tmt > 1000 / st->srate) {
 
+            Quaternion q;
+
             st->mpu_sample_tmt = millis();
-            si_sample(mpu, st);
+            si_serial_set_value(st->serial, SI_GY_QUATERNION, (uint8_t*)&q);
+            // si_sample(mpu, st);
         }
     }
 }
@@ -172,7 +177,7 @@ void si_gy_handle_enable(si_device_state_t* state, uint8_t enabled)
         state->device_flags &= ~(SI_FLAG_SEND_DATA);
 }
 */
-const void* si_gy_on_req(void* dev, si_gy_values_t value, const void* data)
+const uint8_t* si_gy_on_req(void* dev, si_gy_values_t value, const uint8_t* data)
 {
     si_device_state_t* device = (si_device_state_t*) dev;
 
@@ -181,9 +186,9 @@ const void* si_gy_on_req(void* dev, si_gy_values_t value, const void* data)
         case SI_GY_SRATE: 
             return &device->srate;
         case SI_GY_VERSION: 
-            return &si_gy_software_version;
+            return (const uint8_t*) &si_gy_software_version;
         case SI_GY_HELLO: 
-            return si_gy_hello_string;
+            return (const uint8_t*) si_gy_hello_string;
         case SI_GY_ALIVE: 
             return &si_gy_true_false_byte[true];
         case SI_GY_FOUND:
@@ -198,15 +203,21 @@ const void* si_gy_on_req(void* dev, si_gy_values_t value, const void* data)
     // clang-format on
 }
 
-void si_gy_on_set(void* dev, si_gy_values_t value, const void* data)
+void si_gy_on_set(void* dev, si_gy_values_t value, const uint8_t* data)
 {
     si_device_state_t* device = (si_device_state_t*) dev;
 
     switch (value) {
-        case SI_GY_SRATE: device->srate = *((uint8_t*) data); break;
+        case SI_GY_SRATE: 
+            device->srate = data[0];
+            si_serial_set_value(device->serial, SI_GY_SRATE, &device->srate); 
+            break;
         case SI_GY_ENABLE:
-            ((uint8_t*) data) ? device->device_flags |= SI_FLAG_SEND_DATA
-                              : device->device_flags &= ~(SI_FLAG_SEND_DATA);
+            (data[0])
+                ? device->device_flags |= SI_FLAG_SEND_DATA
+                : device->device_flags &= ~(SI_FLAG_SEND_DATA);
+            si_serial_set_value(device->serial, SI_GY_ENABLE, &device->device_flags);
+            break;
         default: break;
     }
 }

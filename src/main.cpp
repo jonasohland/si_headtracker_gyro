@@ -9,7 +9,7 @@ MPU6050 mpu;
 void setup()
 {
     si_serial_init(
-        &Serial, &serial, &device, { si_gy_on_req, si_gy_on_set, si_gy_on_notify});
+        &Serial, &serial, &device, { si_gy_on_req, si_gy_on_set, si_gy_on_notify });
 
     si_gy_prepare(&device, &serial);
 }
@@ -17,5 +17,6 @@ void setup()
 void loop()
 {
     si_gy_run(&mpu, &device);
+
     si_serial_run(&serial);
 }
