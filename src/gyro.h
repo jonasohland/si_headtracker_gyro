@@ -56,7 +56,7 @@ void si_gy_prepare(si_device_state_t*, si_serial_t*);
 
 void si_gyro_check(MPU6050* mpu, si_device_state* state);
 
-void si_gy_run(MPU6050* mpu, si_device_state_t* state);
+void si_gy_run(MPU6050* mpu, si_device_state_t* state, si_serial_t*);
 
 const uint8_t* si_gy_on_req(void*, si_gy_values_t, const uint8_t*);
 void si_gy_on_set(void*, si_gy_values_t, const uint8_t*);
