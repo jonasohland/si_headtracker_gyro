@@ -13,6 +13,8 @@ typedef struct VectorFloat VectorFloat;
 #    include <MPU6050.h>
 #endif
 
+#define SI_SELF_RESET_PIN A0
+
 #include "shared/serial.h"
 
 struct Quaternion_d {
@@ -51,6 +53,8 @@ typedef struct si_device_state {
     Quaternion_d current;
 
 } si_device_state_t;
+
+void si_gy_reset();
 
 void si_gy_prepare(si_device_state_t*, si_serial_t*);
 

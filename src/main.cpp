@@ -1,3 +1,5 @@
+
+
 #include "gyro.h"
 #include "shared/serial.h"
 #include <Arduino.h>
@@ -8,6 +10,16 @@ MPU6050 mpu;
 
 void setup()
 {
+    digitalWrite(SI_SELF_RESET_PIN, HIGH);
+
+    digitalWrite(LED_BUILTIN, HIGH);
+    delay(100);
+    digitalWrite(LED_BUILTIN, LOW);
+    delay(100);
+    digitalWrite(LED_BUILTIN, HIGH);
+    delay(100);
+    digitalWrite(LED_BUILTIN, LOW);
+
     si_serial_init(&Serial,
                    &serial,
                    &device,
