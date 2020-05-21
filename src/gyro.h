@@ -4,7 +4,7 @@
 // #include "net.h"
 #define I2CDEV_SERIAL_DEBUG
 #ifdef SI_IMPLEMENT_MOTIONAPPS
-#    include <MPU6050_6Axis_MotionApps20.h>
+#    include <MPU6050_6Axis_MotionApps_V6_12.h>
 #else
 typedef struct VectorInt16 VectorInt16;
 typedef struct Quaternion Quaternion;
@@ -22,6 +22,13 @@ struct Quaternion_d {
     float x;
     float y;
     float z;
+};
+
+struct IntQuat {
+    int16_t w;
+    int16_t x;
+    int16_t y;
+    int16_t z;
 };
 
 typedef enum si_mpu_status {
@@ -47,18 +54,30 @@ typedef struct si_device_state {
     uint64_t main_clk_tmt;
     uint64_t mpu_sample_tmt;
 
+    uint32_t interrupt_cnt;
+    uint32_t read_cnt;
+
     si_serial_t* serial;
 
+    IntQuat qflt[3];
     Quaternion_d offset;
-    Quaternion_d current;
+
+    volatile uint8_t data_ready = 0;
+
+    MPU6050* mpu;
 
 } si_device_state_t;
 
 void si_gy_reset();
 
-void si_gy_prepare(si_device_state_t*, si_serial_t*);
+void si_gy_prepare(si_device_state_t*, si_serial_t*, MPU6050*);
 
 void si_gyro_check(MPU6050* mpu, si_device_state* state);
+void si_gyro_init(MPU6050* mpu, si_device_state_t* st);
+
+void si_interrupt();
+
+void si_write_sample();
 
 void si_gy_run(MPU6050* mpu, si_device_state_t* state, si_serial_t*);
 

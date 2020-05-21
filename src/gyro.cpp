@@ -2,26 +2,35 @@
 #include "gyro.h"
 #undef SI_IMPLEMENT_MOTIONAPPS
 
-uint8_t si_gy_software_version[] = { 0x00, 0x00, 0x01 };
+uint8_t si_gy_software_version[] = { 0x00, 0x00, 0x02 };
 const char* si_gy_hello_string   = "hello";
 uint8_t si_gy_true_false_byte[]  = { 0, 1 };
 
+si_serial_t* iserial;
+si_device_state_t* idevice;
+
+volatile uint8_t data_int = false;
+
 void si_gy_reset()
 {
-    // "call" 0
+    // "call" 0 and crash (not very elegant, but it works)
     ((void (*)()) 0)();
 }
 
-void si_gy_prepare(si_device_state_t* st, si_serial_t* serial)
+void si_gy_prepare(si_device_state_t* st, si_serial_t* serial, MPU6050* mpu)
 {
     st->main_clk_tmt   = millis();
     st->mpu_sample_tmt = millis();
     st->serial         = serial;
+    st->mpu            = mpu;
+    iserial            = serial;
+    idevice            = st;
 
     st->mpu_status = SI_MPU_DISCONNECTED;
 
     Fastwire::setup(400, true);
-    I2Cdev::readTimeout = 500;
+
+    si_gyro_init(mpu, st);
 }
 
 void si_gyro_check(MPU6050* mpu, si_device_state_t* st)
@@ -42,8 +51,17 @@ void si_gyro_check(MPU6050* mpu, si_device_state_t* st)
     }
 }
 
+void si_interrupt()
+{
+    ++idevice->interrupt_cnt;
+    if (idevice->mpu_status != SI_MPU_CONNECTED) return; 
+
+    data_int = true; 
+}
+
 void si_gyro_init(MPU6050* mpu, si_device_state_t* st)
 {
+    pinMode(2, INPUT);
     mpu->initialize();
 
     delay(500);
@@ -51,18 +69,41 @@ void si_gyro_init(MPU6050* mpu, si_device_state_t* st)
     if (!mpu->dmpInitialize()) {
 
         st->mpu_expected_packet_size = mpu->dmpGetFIFOPacketSize();
-        st->mpu_status               = SI_MPU_CONNECTED;
+
+        mpu->setInterruptMode(true);
+        mpu->setInterruptLatch(false);
 
         mpu->setDMPEnabled(true);
+
+        attachInterrupt(digitalPinToInterrupt(2), si_interrupt, RISING);
+
+        st->mpu_status               = SI_MPU_CONNECTED;
     }
     else {
         st->mpu_status = SI_MPU_DISCONNECTED;
     }
 }
 
+
 void si_sample(MPU6050* mpu, si_device_state_t* st, si_serial_t* serial)
 {
-    uint8_t buf[64];
+    if (!data_int) return;
+    data_int = false;
+
+    int fifocnt = idevice->mpu->getFIFOCount();
+
+    if (fifocnt >= 28) {
+
+        digitalWrite(LED_BUILTIN, HIGH);
+
+        uint8_t buf[28];
+
+        ++idevice->read_cnt;
+        idevice->mpu->getFIFOBytes(buf, idevice->mpu_expected_packet_size);
+        idevice->mpu->dmpGetQuaternion(&idevice->qflt[0].w, buf);
+    }
+
+    /* uint8_t buf[64];
 
     int mpuIntStatus = mpu->getIntStatus();
     int fifocnt      = mpu->getFIFOCount();
@@ -94,18 +135,22 @@ void si_sample(MPU6050* mpu, si_device_state_t* st, si_serial_t* serial)
             q = q.getProduct(*((Quaternion*) &st->offset));
 
         if (st->gyro_flags & SI_FLAG_ST_INVERT_X) q.x = -q.x;
-
         if (st->gyro_flags & SI_FLAG_ST_INVERT_Y) q.y = -q.y;
-
         if (st->gyro_flags & SI_FLAG_ST_INVERT_Z) q.z = -q.z;
 
         si_serial_set_value(serial, SI_GY_QUATERNION, (uint8_t*) &q);
-    }
+    } */
+}
+
+void si_write_sample()
+{
+    si_serial_write_message(
+        iserial, SI_GY_SET, SI_GY_QUATERNION, (uint8_t*) &idevice->qflt[0].w);
 }
 
 void si_gy_run(MPU6050* mpu, si_device_state_t* st, si_serial_t* serial)
 {
-    if (millis() - st->main_clk_tmt > 1000 / 2) {
+    /* if (millis() - st->main_clk_tmt > 1000 / 2) {
 
         si_gyro_check(mpu, st);
 
@@ -115,44 +160,20 @@ void si_gy_run(MPU6050* mpu, si_device_state_t* st, si_serial_t* serial)
         if (st->mpu_status == SI_MPU_FOUND) si_gyro_init(mpu, st);
 
         st->main_clk_tmt = millis();
-    }
+    } */
+
+    si_sample(mpu, st, serial);
 
     if (st->mpu_status == SI_MPU_CONNECTED
         && (st->device_flags & SI_FLAG_SEND_DATA)) {
 
         if (millis() - st->mpu_sample_tmt > 1000 / st->srate) {
             st->mpu_sample_tmt = millis();
-            si_sample(mpu, st, serial);
+            si_write_sample();
         }
-    }
-}
-/*
-void si_gy_handle_hello(si_device_state_t* state, si_serial_t* serial, const
-char* buf)
-{
-    const char* hello = "hello";
-    si_serial_set_value(serial, SI_GY_HELLO, hello);
+    } 
 }
 
-void si_gy_handle_srate(si_device_state_t* state, uint8_t srate)
-{
-    state->srate = srate;
-}
-
-void si_gy_handle_alive(si_device_state_t* state, si_serial_t* serial)
-{
-    uint8_t one = 1;
-    si_serial_set_value(serial, SI_GY_ALIVE, &one);
-}
-
-void si_gy_handle_enable(si_device_state_t* state, uint8_t enabled)
-{
-    if(enabled)
-        state->device_flags |= SI_FLAG_SEND_DATA;
-    else
-        state->device_flags &= ~(SI_FLAG_SEND_DATA);
-}
-*/
 const uint8_t*
 si_gy_on_req(void* dev, si_gy_values_t value, const uint8_t* data)
 {
@@ -177,8 +198,10 @@ si_gy_on_req(void* dev, si_gy_values_t value, const uint8_t* data)
         case SI_GY_RESET:
             si_serial_write_message(device->serial, SI_GY_RESP, SI_GY_RESET, si_gy_true_false_byte + 1);
             delay(2000);
-            si_gy_reset();
+            // si_gy_reset();
             return &si_gy_true_false_byte[0];
+        case SI_GY_INT_COUNT:
+            return (uint8_t*) &device->interrupt_cnt;
         default: 
             return nullptr;
     }

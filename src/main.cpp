@@ -25,7 +25,7 @@ void setup()
                    &device,
                    { si_gy_on_req, si_gy_on_set, si_gy_on_notify });
 
-    si_gy_prepare(&device, &serial);
+    si_gy_prepare(&device, &serial, &mpu);
 }
 
 void loop()
