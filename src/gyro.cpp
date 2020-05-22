@@ -2,7 +2,7 @@
 #include "gyro.h"
 #undef SI_IMPLEMENT_MOTIONAPPS
 
-uint8_t si_gy_software_version[] = { 0x00, 0x00, 0x02 };
+uint8_t si_gy_software_version[] = { 0x00, 0x00, 0x04 };
 const char* si_gy_hello_string   = "hello";
 uint8_t si_gy_true_false_byte[]  = { 0, 1 };
 
@@ -54,9 +54,9 @@ void si_gyro_check(MPU6050* mpu, si_device_state_t* st)
 void si_interrupt()
 {
     ++idevice->interrupt_cnt;
-    if (idevice->mpu_status != SI_MPU_CONNECTED) return; 
+    if (idevice->mpu_status != SI_MPU_CONNECTED) return;
 
-    data_int = true; 
+    data_int = true;
 }
 
 void si_gyro_init(MPU6050* mpu, si_device_state_t* st)
@@ -77,7 +77,7 @@ void si_gyro_init(MPU6050* mpu, si_device_state_t* st)
 
         attachInterrupt(digitalPinToInterrupt(2), si_interrupt, RISING);
 
-        st->mpu_status               = SI_MPU_CONNECTED;
+        st->mpu_status = SI_MPU_CONNECTED;
     }
     else {
         st->mpu_status = SI_MPU_DISCONNECTED;
@@ -100,7 +100,8 @@ void si_sample(MPU6050* mpu, si_device_state_t* st, si_serial_t* serial)
 
         ++idevice->read_cnt;
         idevice->mpu->getFIFOBytes(buf, idevice->mpu_expected_packet_size);
-        idevice->mpu->dmpGetQuaternion(&idevice->qflt[0].w, buf);
+        idevice->mpu->dmpGetQuaternion(
+            (Quaternion*) &idevice->last_quaternion, buf);
     }
 
     /* uint8_t buf[64];
@@ -142,10 +143,41 @@ void si_sample(MPU6050* mpu, si_device_state_t* st, si_serial_t* serial)
     } */
 }
 
-void si_write_sample()
+void si_write_sample(si_device_state_t* st)
 {
-    si_serial_write_message(
-        iserial, SI_GY_SET, SI_GY_QUATERNION, (uint8_t*) &idevice->qflt[0].w);
+    if (st->gyro_flags & SI_FLAG_RESET_ORIENTATION) {
+
+        Quaternion current_rot
+            = ((Quaternion*) (&st->last_quaternion))->getConjugate();
+
+        memcpy(&st->offset, &current_rot, sizeof(Quaternion));
+
+        st->gyro_flags |= SI_FLAG_APPLY_OFFSETS;
+        st->gyro_flags &= ~(SI_FLAG_RESET_ORIENTATION);
+
+        si_serial_write_message(st->serial,
+                                SI_GY_NOTIFY,
+                                SI_GY_RESET_ORIENTATION,
+                                si_gy_true_false_byte);
+    }
+
+    if (st->gyro_flags & SI_FLAG_APPLY_OFFSETS)
+        *((Quaternion*) (&st->last_quaternion))
+            = ((Quaternion*) (&st->last_quaternion))
+                  ->getProduct(*((Quaternion*) (&st->offset)));
+
+    if (st->gyro_flags & SI_FLAG_ST_INVERT_X)
+        st->last_quaternion.x = -st->last_quaternion.x;
+    if (st->gyro_flags & SI_FLAG_ST_INVERT_Y)
+        st->last_quaternion.y = -st->last_quaternion.y;
+    if (st->gyro_flags & SI_FLAG_ST_INVERT_Z)
+        st->last_quaternion.z = -st->last_quaternion.z;
+
+
+    si_serial_write_message(iserial,
+                            SI_GY_SET,
+                            SI_GY_QUATERNION,
+                            (uint8_t*) &idevice->last_quaternion);
 }
 
 void si_gy_run(MPU6050* mpu, si_device_state_t* st, si_serial_t* serial)
@@ -169,9 +201,9 @@ void si_gy_run(MPU6050* mpu, si_device_state_t* st, si_serial_t* serial)
 
         if (millis() - st->mpu_sample_tmt > 1000 / st->srate) {
             st->mpu_sample_tmt = millis();
-            si_write_sample();
+            si_write_sample(st);
         }
-    } 
+    }
 }
 
 const uint8_t*

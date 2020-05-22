@@ -59,7 +59,7 @@ typedef struct si_device_state {
 
     si_serial_t* serial;
 
-    IntQuat qflt[3];
+    Quaternion_d last_quaternion;
     Quaternion_d offset;
 
     volatile uint8_t data_ready = 0;
@@ -77,7 +77,7 @@ void si_gyro_init(MPU6050* mpu, si_device_state_t* st);
 
 void si_interrupt();
 
-void si_write_sample();
+void si_write_sample(si_device_state_t*);
 
 void si_gy_run(MPU6050* mpu, si_device_state_t* state, si_serial_t*);
 
