@@ -145,6 +145,7 @@ void si_sample(MPU6050* mpu, si_device_state_t* st, si_serial_t* serial)
 
 void si_write_sample(si_device_state_t* st)
 {
+    // TODO: Replace this with int16 math. Float math is very slow on ATMEGA328Ps
     if (st->gyro_flags & SI_FLAG_RESET_ORIENTATION) {
 
         Quaternion current_rot
@@ -174,10 +175,22 @@ void si_write_sample(si_device_state_t* st)
         st->last_quaternion.z = -st->last_quaternion.z;
 
 
-    si_serial_write_message(iserial,
-                            SI_GY_SET,
-                            SI_GY_QUATERNION,
-                            (uint8_t*) &idevice->last_quaternion);
+    if (st->device_flags & SI_GY_QUATERNION_FLOAT)
+        si_serial_write_message(iserial,
+                                SI_GY_SET,
+                                SI_GY_QUATERNION_FLOAT,
+                                (uint8_t*) &idevice->last_quaternion);
+    else {
+        IntQuat qint;
+
+        qint.w = st->last_quaternion.w * 16384.0f;
+        qint.x = st->last_quaternion.x * 16384.0f;
+        qint.y = st->last_quaternion.y * 16384.0f;
+        qint.z = st->last_quaternion.z * 16384.0f;
+
+        si_serial_write_message(
+            iserial, SI_GY_SET, SI_GY_QUATERNION_INT16, (uint8_t*) &qint);
+    }
 }
 
 void si_gy_run(MPU6050* mpu, si_device_state_t* st, si_serial_t* serial)
@@ -234,6 +247,8 @@ si_gy_on_req(void* dev, si_gy_values_t value, const uint8_t* data)
             return &si_gy_true_false_byte[0];
         case SI_GY_INT_COUNT:
             return (uint8_t*) &device->interrupt_cnt;
+        case SI_GY_QUATERNION_FLOAT:
+            return &si_gy_true_false_byte[device->device_flags & SI_FLAG_OUTPUT_FLOAT];
         default: 
             return nullptr;
     }
@@ -256,6 +271,10 @@ void si_gy_on_set(void* dev, si_gy_values_t value, const uint8_t* data)
             break;
         case SI_GY_RESET_ORIENTATION:
             device->gyro_flags |= SI_FLAG_RESET_ORIENTATION;
+            break;
+        case SI_GY_QUATERNION_FLOAT:
+            (data[0]) ? device->gyro_flags |= SI_FLAG_OUTPUT_FLOAT
+                      : device->gyro_flags &= ~(SI_FLAG_OUTPUT_FLOAT);
             break;
         default: break;
     }
