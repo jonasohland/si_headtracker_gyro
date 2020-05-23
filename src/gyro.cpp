@@ -1,6 +1,7 @@
 #define SI_IMPLEMENT_MOTIONAPPS
 #include "gyro.h"
 #undef SI_IMPLEMENT_MOTIONAPPS
+#include <EEPROM.h>
 
 uint8_t si_gy_software_version[] = { 0x00, 0x00, 0x04 };
 const char* si_gy_hello_string   = "hello";

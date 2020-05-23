@@ -16,7 +16,6 @@ typedef struct VectorFloat VectorFloat;
 #define SI_SELF_RESET_PIN A0
 
 #include "shared/serial.h"
-#include <EEPROM.h>
 
 struct Quaternion_d {
     float w;
