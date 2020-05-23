@@ -26,6 +26,8 @@ void si_gy_prepare(si_device_state_t* st, si_serial_t* serial, MPU6050* mpu)
     iserial            = serial;
     idevice            = st;
 
+    st->devid = EEPROM.read(0);
+
     st->mpu_status = SI_MPU_DISCONNECTED;
 
     Fastwire::setup(400, true);
@@ -145,7 +147,8 @@ void si_sample(MPU6050* mpu, si_device_state_t* st, si_serial_t* serial)
 
 void si_write_sample(si_device_state_t* st)
 {
-    // TODO: Replace this with int16 math. Float math is very slow on ATMEGA328Ps
+    // TODO: Replace this with int16 math. Float math is very slow on
+    // ATMEGA328Ps
     if (st->gyro_flags & SI_FLAG_RESET_ORIENTATION) {
 
         Quaternion current_rot
@@ -249,6 +252,8 @@ si_gy_on_req(void* dev, si_gy_values_t value, const uint8_t* data)
             return (uint8_t*) &device->interrupt_cnt;
         case SI_GY_QUATERNION_FLOAT:
             return &si_gy_true_false_byte[device->device_flags & SI_FLAG_OUTPUT_FLOAT];
+        case SI_GY_ID:
+            return &device->devid;
         default: 
             return nullptr;
     }
@@ -275,6 +280,10 @@ void si_gy_on_set(void* dev, si_gy_values_t value, const uint8_t* data)
         case SI_GY_QUATERNION_FLOAT:
             (data[0]) ? device->gyro_flags |= SI_FLAG_OUTPUT_FLOAT
                       : device->gyro_flags &= ~(SI_FLAG_OUTPUT_FLOAT);
+            break;
+        case SI_GY_ID:
+            device->devid = *data;
+            EEPROM.write(0, device->devid);
             break;
         default: break;
     }
