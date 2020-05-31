@@ -4,7 +4,7 @@
 // #include "net.h"
 #define I2CDEV_SERIAL_DEBUG
 #ifdef SI_IMPLEMENT_MOTIONAPPS
-#    include <MPU6050_6Axis_MotionApps_V6_12.h>
+#    include <MPU6050_6Axis_MotionApps20.h>
 #else
 typedef struct VectorInt16 VectorInt16;
 typedef struct Quaternion Quaternion;
@@ -78,6 +78,8 @@ void si_gyro_init(MPU6050* mpu, si_device_state_t* st);
 void si_interrupt();
 
 void si_write_sample(si_device_state_t*);
+
+void si_gy_calibrate(MPU6050* mpu, si_device_state_t* st, si_serial_t* serial, uint8_t lcnt);
 
 void si_gy_run(MPU6050* mpu, si_device_state_t* state, si_serial_t*);
 

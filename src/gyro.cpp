@@ -3,7 +3,7 @@
 #undef SI_IMPLEMENT_MOTIONAPPS
 #include <EEPROM.h>
 
-uint8_t si_gy_software_version[] = { 0x00, 0x02, 0x00 };
+uint8_t si_gy_software_version[] = { 0x00, 0x02, 0x01 };
 const char* si_gy_hello_string   = "hello";
 uint8_t si_gy_true_false_byte[]  = { 0, 1 };
 
@@ -197,12 +197,17 @@ void si_write_sample(si_device_state_t* st)
     }
 }
 
+void si_gy_calibration_progress(uint8_t prg, void* serial)
+{
+    si_serial_set_value((si_serial_t*) serial, SI_GY_CALIBRATE, &prg);
+}
+
 void si_gy_calibrate(MPU6050* mpu, si_device_state_t* st, si_serial_t* serial, uint8_t lcnt)
 {
     uint8_t restart = st->device_flags & SI_FLAG_SEND_DATA;
     
-    mpu->CalibrateGyro(lcnt);
-    mpu->CalibrateAccel(lcnt);
+    mpu->CalibrateGyro(lcnt, serial, si_gy_calibration_progress);
+    mpu->CalibrateAccel(lcnt, serial, si_gy_calibration_progress);
 
     if(restart)
         st->device_flags |= SI_FLAG_SEND_DATA;
