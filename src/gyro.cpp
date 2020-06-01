@@ -3,7 +3,7 @@
 #undef SI_IMPLEMENT_MOTIONAPPS
 #include <EEPROM.h>
 
-uint8_t si_gy_software_version[] = { 0x00, 0x02, 0x01 };
+uint8_t si_gy_software_version[] = { 0x00, 0x03, 0x00 };
 const char* si_gy_hello_string   = "hello";
 uint8_t si_gy_true_false_byte[]  = { 0, 1 };
 
@@ -11,6 +11,52 @@ si_serial_t* iserial;
 si_device_state_t* idevice;
 
 volatile uint8_t data_int = false;
+
+Quaternion RotMat2Quat(imu::Matrix<3>& m)
+{
+    Quaternion ret;
+    double tr = m.trace();
+
+    double S;
+    if (tr > 0) {
+        S     = sqrt(tr + 1.0) * 2;
+        ret.w = 0.25 * S;
+        ret.x = (m(2, 1) - m(1, 2)) / S;
+        ret.y = (m(0, 2) - m(2, 0)) / S;
+        ret.z = (m(1, 0) - m(0, 1)) / S;
+    }
+    else if (m(0, 0) > m(1, 1) && m(0, 0) > m(2, 2)) {
+        S     = sqrt(1.0 + m(0, 0) - m(1, 1) - m(2, 2)) * 2;
+        ret.w = (m(2, 1) - m(1, 2)) / S;
+        ret.x = 0.25 * S;
+        ret.y = (m(0, 1) + m(1, 0)) / S;
+        ret.z = (m(0, 2) + m(2, 0)) / S;
+    }
+    else if (m(1, 1) > m(2, 2)) {
+        S     = sqrt(1.0 + m(1, 1) - m(0, 0) - m(2, 2)) * 2;
+        ret.w = (m(0, 2) - m(2, 0)) / S;
+        ret.x = (m(0, 1) + m(1, 0)) / S;
+        ret.y = 0.25 * S;
+        ret.z = (m(1, 2) + m(2, 1)) / S;
+    }
+    else {
+        S     = sqrt(1.0 + m(2, 2) - m(0, 0) - m(1, 1)) * 2;
+        ret.w = (m(1, 0) - m(0, 1)) / S;
+        ret.x = (m(0, 2) + m(2, 0)) / S;
+        ret.y = (m(1, 2) + m(2, 1)) / S;
+        ret.z = 0.25 * S;
+    }
+    return ret;
+}
+
+VectorFloat cross(VectorFloat p, VectorFloat v)
+{
+    VectorFloat ret;
+    ret.x = p.y * v.z - p.z * v.y;
+    ret.y = p.z * v.x - p.x * v.z;
+    ret.z = p.x * v.y - p.y * v.x;
+    return ret;
+}
 
 void si_gy_reset()
 {
@@ -33,6 +79,8 @@ void si_gy_prepare(si_device_state_t* st, si_serial_t* serial, MPU6050* mpu)
 
     Fastwire::setup(400, true);
 
+    EEPROM.get(16, st->q_cal);
+    si_gy_reset_orientation(st);
     si_gyro_init(mpu, st);
 }
 
@@ -103,98 +151,34 @@ void si_sample(MPU6050* mpu, si_device_state_t* st, si_serial_t* serial)
 
         ++idevice->read_cnt;
         idevice->mpu->getFIFOBytes(buf, idevice->mpu_expected_packet_size);
-        idevice->mpu->dmpGetQuaternion(
-            (Quaternion*) &idevice->last_quaternion, buf);
+        idevice->mpu->dmpGetQuaternion((Quaternion*) &idevice->q_raw, buf);
+        idevice->mpu->dmpGetAccel((VectorInt16*) &idevice->g_raw, buf);
     }
-
-    /* uint8_t buf[64];
-
-    int mpuIntStatus = mpu->getIntStatus();
-    int fifocnt      = mpu->getFIFOCount();
-
-    if (mpuIntStatus & _BV(0) && fifocnt >= 16) {
-
-        Quaternion q;
-
-        mpu->getFIFOBytes(buf, st->mpu_expected_packet_size);
-        mpu->dmpGetQuaternion(&q, buf);
-        mpu->resetFIFO();
-
-        if (st->gyro_flags & SI_FLAG_RESET_ORIENTATION) {
-
-            Quaternion current_rot = q.getConjugate();
-
-            memcpy(&st->offset, &current_rot, sizeof(Quaternion));
-
-            st->gyro_flags |= SI_FLAG_APPLY_OFFSETS;
-            st->gyro_flags &= ~(SI_FLAG_RESET_ORIENTATION);
-
-            si_serial_write_message(st->serial,
-                                    SI_GY_NOTIFY,
-                                    SI_GY_RESET_ORIENTATION,
-                                    si_gy_true_false_byte);
-        }
-
-        if (st->gyro_flags & SI_FLAG_APPLY_OFFSETS)
-            q = q.getProduct(*((Quaternion*) &st->offset));
-
-        if (st->gyro_flags & SI_FLAG_ST_INVERT_X) q.x = -q.x;
-        if (st->gyro_flags & SI_FLAG_ST_INVERT_Y) q.y = -q.y;
-        if (st->gyro_flags & SI_FLAG_ST_INVERT_Z) q.z = -q.z;
-
-        si_serial_set_value(serial, SI_GY_QUATERNION, (uint8_t*) &q);
-    } */
 }
 
 void si_write_sample(si_device_state_t* st)
 {
-    // TODO: Replace this with int16 math. Float math is very slow on
-    // ATMEGA328Ps
-    if (st->gyro_flags & SI_FLAG_RESET_ORIENTATION) {
+    Quaternion quat, steering;
 
-        Quaternion current_rot
-            = ((Quaternion*) (&st->last_quaternion))->getConjugate();
+    Quaternion* qCalLeft  = (Quaternion*) &st->q_cal_L;
+    Quaternion* qCalRight = (Quaternion*) &st->q_cal_R;
+    Quaternion* qRaw      = (Quaternion*) &st->q_raw;
+    Quaternion* qIdleConj = (Quaternion*) &st->q_idle_conj;
 
-        memcpy(&st->offset, &current_rot, sizeof(Quaternion));
+    steering = qIdleConj->getProduct(*qRaw);
+    quat     = qCalLeft->getProduct(steering);
+    quat     = quat.getProduct(*qCalRight);
 
-        st->gyro_flags |= SI_FLAG_APPLY_OFFSETS;
-        st->gyro_flags &= ~(SI_FLAG_RESET_ORIENTATION);
+    if(st->gyro_flags & SI_FLAG_ST_INVERT_X)
+        quat.x = -quat.x;
 
-        si_serial_write_message(st->serial,
-                                SI_GY_NOTIFY,
-                                SI_GY_RESET_ORIENTATION,
-                                si_gy_true_false_byte);
-    }
+    if(st->gyro_flags & SI_FLAG_ST_INVERT_Y)
+        quat.y = -quat.y;
+    
+    if(st->gyro_flags & SI_FLAG_ST_INVERT_Z)
+        quat.z = -quat.z;
 
-    if (st->gyro_flags & SI_FLAG_APPLY_OFFSETS)
-        *((Quaternion*) (&st->last_quaternion))
-            = ((Quaternion*) (&st->last_quaternion))
-                  ->getProduct(*((Quaternion*) (&st->offset)));
-
-    if (st->gyro_flags & SI_FLAG_ST_INVERT_X)
-        st->last_quaternion.x = -st->last_quaternion.x;
-    if (st->gyro_flags & SI_FLAG_ST_INVERT_Y)
-        st->last_quaternion.y = -st->last_quaternion.y;
-    if (st->gyro_flags & SI_FLAG_ST_INVERT_Z)
-        st->last_quaternion.z = -st->last_quaternion.z;
-
-
-    if (st->device_flags & SI_GY_QUATERNION_FLOAT)
-        si_serial_write_message(iserial,
-                                SI_GY_SET,
-                                SI_GY_QUATERNION_FLOAT,
-                                (uint8_t*) &idevice->last_quaternion);
-    else {
-        IntQuat qint;
-
-        qint.w = st->last_quaternion.w * 16384.0f;
-        qint.x = st->last_quaternion.x * 16384.0f;
-        qint.y = st->last_quaternion.y * 16384.0f;
-        qint.z = st->last_quaternion.z * 16384.0f;
-
-        si_serial_write_message(
-            iserial, SI_GY_SET, SI_GY_QUATERNION_INT16, (uint8_t*) &qint);
-    }
+    si_serial_set_value(st->serial, SI_GY_QUATERNION_FLOAT, (uint8_t*) &quat);
 }
 
 void si_gy_calibration_progress(uint8_t prg, void* serial)
@@ -202,31 +186,73 @@ void si_gy_calibration_progress(uint8_t prg, void* serial)
     si_serial_set_value((si_serial_t*) serial, SI_GY_CALIBRATE, &prg);
 }
 
-void si_gy_calibrate(MPU6050* mpu, si_device_state_t* st, si_serial_t* serial, uint8_t lcnt)
+void si_gy_calibrate(MPU6050* mpu,
+                     si_device_state_t* st,
+                     si_serial_t* serial,
+                     uint8_t lcnt)
 {
     uint8_t restart = st->device_flags & SI_FLAG_SEND_DATA;
-    
+
     mpu->CalibrateGyro(lcnt, serial, si_gy_calibration_progress);
     mpu->CalibrateAccel(lcnt, serial, si_gy_calibration_progress);
 
-    if(restart)
-        st->device_flags |= SI_FLAG_SEND_DATA;
+    if (restart) st->device_flags |= SI_FLAG_SEND_DATA;
+}
+
+void si_gy_reset_orientation(si_device_state_t* dev)
+{
+    *((Quaternion*) &dev->q_cal_L)
+        = ((Quaternion*) &dev->q_cal)->getConjugate();
+    memcpy(&dev->q_cal_R, &dev->q_cal, sizeof(qbuf));
+}
+
+
+void si_gy_init_begin(si_device_state_t* dev)
+{
+    *((Quaternion*) (&dev->q_idle_conj))
+        = ((Quaternion*) (&dev->q_raw))->getConjugate();
+
+    *((VectorFloat*) (&dev->g_grv_idle)) = VectorFloat(
+        dev->g_raw.storage[0], dev->g_raw.storage[1], dev->g_raw.storage[2]);
+}
+
+void si_gy_init_finish(si_device_state_t* dev)
+{
+    VectorFloat g, gCal, x, y, z;
+
+    *((VectorFloat*) &dev->v_grv_cal) = VectorFloat(
+        dev->g_raw.storage[0], dev->g_raw.storage[1], dev->g_raw.storage[2]);
+
+    g = *((VectorFloat*) &dev->g_grv_idle);
+    z = g;
+    z.normalize();
+
+    gCal = VectorFloat(
+        dev->v_grv_cal.storage[0], dev->v_grv_cal.storage[1], dev->v_grv_cal.storage[2]);
+    y = cross(gCal, g);
+    y.normalize();
+
+    x = cross(y, z);
+    x.normalize();
+
+    imu::Matrix<3> rot;
+
+    rot.cell(0, 0) = x.x;
+    rot.cell(1, 0) = x.y;
+    rot.cell(2, 0) = x.z;
+    rot.cell(0, 1) = y.x;
+    rot.cell(1, 1) = y.y;
+    rot.cell(2, 1) = y.z;
+    rot.cell(0, 2) = z.x;
+    rot.cell(1, 2) = z.y;
+    rot.cell(2, 2) = z.z;
+
+    *((Quaternion*) &dev->q_cal) = RotMat2Quat(rot);
+    EEPROM.put(16, dev->q_cal);
 }
 
 void si_gy_run(MPU6050* mpu, si_device_state_t* st, si_serial_t* serial)
 {
-    /* if (millis() - st->main_clk_tmt > 1000 / 2) {
-
-        si_gyro_check(mpu, st);
-
-        if (st->mpu_status != st->last_mpu_status)
-            st->last_mpu_status = st->mpu_status;
-
-        if (st->mpu_status == SI_MPU_FOUND) si_gyro_init(mpu, st);
-
-        st->main_clk_tmt = millis();
-    } */
-
     si_sample(mpu, st, serial);
 
     if (st->mpu_status == SI_MPU_CONNECTED
@@ -263,7 +289,7 @@ si_gy_on_req(void* dev, si_gy_values_t value, const uint8_t* data)
         case SI_GY_RESET:
             si_serial_write_message(device->serial, SI_GY_RESP, SI_GY_RESET, si_gy_true_false_byte + 1);
             delay(2000);
-            // si_gy_reset();
+            si_gy_reset();
             return &si_gy_true_false_byte[0];
         case SI_GY_INT_COUNT:
             return (uint8_t*) &device->interrupt_cnt;
@@ -271,6 +297,12 @@ si_gy_on_req(void* dev, si_gy_values_t value, const uint8_t* data)
             return &si_gy_true_false_byte[device->device_flags & SI_FLAG_OUTPUT_FLOAT];
         case SI_GY_ID:
             return &device->devid;
+        case SI_GY_INIT_BEGIN:
+            si_gy_init_begin(device);
+            return si_gy_true_false_byte;
+        case SI_GY_INIT_FINISH:
+            si_gy_init_finish(device);
+            return si_gy_true_false_byte;
         default: 
             return nullptr;
     }
@@ -292,7 +324,8 @@ void si_gy_on_set(void* dev, si_gy_values_t value, const uint8_t* data)
                                  | (*data & SI_FLAG_INVERT_BITMASK);
             break;
         case SI_GY_RESET_ORIENTATION:
-            device->gyro_flags |= SI_FLAG_RESET_ORIENTATION;
+            *((Quaternion*) &device->q_idle_conj)
+                = ((Quaternion*) &device->q_raw)->getConjugate();
             break;
         case SI_GY_QUATERNION_FLOAT:
             (data[0]) ? device->gyro_flags |= SI_FLAG_OUTPUT_FLOAT

@@ -15,27 +15,27 @@ typedef struct VectorFloat VectorFloat;
 
 #define SI_SELF_RESET_PIN A0
 
+#include "imumaths/imumaths.h"
 #include "shared/serial.h"
 
-struct Quaternion_d {
-    float w;
-    float x;
-    float y;
-    float z;
-};
-
-struct IntQuat {
-    int16_t w;
-    int16_t x;
-    int16_t y;
-    int16_t z;
-};
 
 typedef enum si_mpu_status {
     SI_MPU_DISCONNECTED,
     SI_MPU_CONNECTED,
     SI_MPU_FOUND
 } si_mpu_status_t;
+
+struct qbuf {
+    float w; float x; float y; float z;
+};
+
+struct v16buf {
+    int16_t storage[3];
+};
+
+struct vfloatbuf {
+    float storage[3];
+};
 
 typedef struct si_device_state {
 
@@ -59,8 +59,19 @@ typedef struct si_device_state {
 
     si_serial_t* serial;
 
-    Quaternion_d last_quaternion;
-    Quaternion_d offset;
+    qbuf q_raw;
+
+    qbuf q_cal;
+    qbuf q_cal_L;
+    qbuf q_cal_R;
+
+    qbuf q_grav_cal;
+    qbuf q_idle_cal;
+    qbuf q_idle_conj;
+
+    v16buf g_raw;
+    vfloatbuf g_grv_idle;
+    vfloatbuf v_grv_cal;
 
     volatile uint8_t data_ready = 0;
 
@@ -79,7 +90,14 @@ void si_interrupt();
 
 void si_write_sample(si_device_state_t*);
 
-void si_gy_calibrate(MPU6050* mpu, si_device_state_t* st, si_serial_t* serial, uint8_t lcnt);
+void si_gy_calibrate(MPU6050* mpu,
+                     si_device_state_t* st,
+                     si_serial_t* serial,
+                     uint8_t lcnt);
+
+void si_gy_reset_orientation(si_device_state_t* d);
+void si_gy_init_begin(si_device_state_t* d);
+void si_gy_init_finish(si_device_state_t* d);
 
 void si_gy_run(MPU6050* mpu, si_device_state_t* state, si_serial_t*);
 
